@@ -1,89 +1,121 @@
-from flask import Flask, session, render_template, redirect, url_for, request
+from flask import Flask, render_template, redirect, url_for, request, flash, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_session import Session
+from werkzeug.security import generate_password_hash, check_password_hash
+from pymongo import MongoClient
+import re
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'
-
-
-# -----------Configure Flask-Session ----------
-# Set the session cookie name
+app.config['SECRET_KEY'] = 'supersecretkey'
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_COOKIE_NAME'] = 'my_custom_session_cookie'
+app.config['SESSION_COOKIE_NAME'] = 'pca-user-session'
 
-# Initialize Flask-Session
 Session(app)
-#----------------------------------------------
 
-# // LoginManager is a class provided by the Flask-Login extension.
-# // By calling LoginManager(), you create a new instance of the LoginManager class.
+# MongoDB connections
+client = MongoClient('mongodb://localhost:27017/')
+db_exam = client['examDB']
+questions_collection = db_exam['questions']
+db_user = client['user_database']
+user_collection = db_user['user_info']
 
-# Creating an Instance of LoginManager
-login_manager = LoginManager() 
-
-# Initializes the LoginManager for use with the given Flask app.
-login_manager.init_app(app) 
-
-# Set the login view (the endpoint to redirect to when a user needs to log in)
+# Create an instance of LoginManager
+login_manager = LoginManager()
+login_manager.init_app(app)
 login_manager.login_view = 'login'
-
-# Customize the message flashed to users when they are redirected to the login view
-login_manager.login_message = "Please log in to access the exam."
+login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "info"
 
-# User Class Initialization
+# Define a simple User class with Flask-Login's UserMixin
 class User(UserMixin):
     def __init__(self, id):
         self.id = id
 
     @staticmethod
     def get(user_id):
-        # In a real application, this method would query the database
-        if user_id == "user1":
+        user = user_collection.find_one({"username": user_id})
+        if user:
             return User(user_id)
         return None
+
+    @staticmethod
+    def register(user_id, password):
+        if user_collection.find_one({"username": user_id}):
+            return False
+        hashed_password = generate_password_hash(password)
+        user_collection.insert_one({"username": user_id, "password": hashed_password})
+        return True
+
+    @staticmethod
+    def verify_password(user_id, password):
+        user = user_collection.find_one({"username": user_id})
+        if user and check_password_hash(user['password'], password):
+            return True
+        return False
 
 # Register the user loader callback
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id)
 
-
-# Route for the root index page
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        user_id = request.form['username']
+        password = request.form['password']
+        if not re.match(r"^[a-zA-Z0-9]{8,}$", password):
+            flash("Password must be at least 8 alphanumeric characters.", "danger")
+        elif User.register(user_id, password):
+            flash("Registration successful. Please log in.", "success")
+            return redirect(url_for('login'))
+        else:
+            flash("Username already exists.", "danger")
+    return render_template('register.html')
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user = User(request.form['username'])
-        login_user(user)
-        return redirect(url_for('protected'))
+        user_id = request.form['username']
+        password = request.form['password']
+        if User.verify_password(user_id, password):
+            user = User(user_id)
+            login_user(user)
+            return redirect(url_for('protected'))
+        flash("Invalid username or password.", "danger")
     return render_template('login.html')
 
 @app.route('/protected')
 @login_required
 def protected():
-    return f'Logged in as: {current_user.id}'
+    return render_template('protected.html', session_id=session.sid, username=current_user.id)
+
+@app.route('/dbvalues')
+@login_required
+def dbvalues():
+    user_data = user_collection.find_one({"username": current_user.id})
+    return render_template('dbvalues.html', session_id=session.sid, username=current_user.id, password_hash=user_data['password'])
+
+@app.route('/question/<int:question_number>')
+@login_required
+def display_question(question_number):
+    try:
+        question_data = questions_collection.find_one({'number': question_number})
+        if not question_data:
+            return "Question not found", 404
+        return render_template('question.html', question=question_data)
+    except Exception as e:
+        return f"An error occurred while connecting to the database: {str(e)}", 500
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return 'Logged out'
-
-# ********** Session Code
-
-@app.route('/set_session')
-def set_session():
-    session['username'] = 'user1'
-    return 'Session set'
-
-@app.route('/get_session')
-def get_session():
-    username = session.get('username')
-    return f'Logged in as {username}'
+    flash("You have been logged out.", "info")
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
     app.run(debug=True)
