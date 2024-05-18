@@ -3,6 +3,72 @@
 {% block title %}Question{% endblock %}
 
 {% block content %}
+<style>
+    /* Hide the default radio button and checkbox */
+    input[type="radio"],
+    input[type="checkbox"] {
+        display: none;
+    }
+
+    /* Create a custom radio button */
+    input[type="radio"] + label::before,
+    input[type="checkbox"] + label::before {
+        content: '';
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        border: 2px solid #007bff;
+        border-radius: 50%;
+        vertical-align: middle;
+        cursor: pointer;
+    }
+
+    /* Style the custom checkbox */
+    input[type="checkbox"] + label::before {
+        border-radius: 4px;
+    }
+
+    /* Checked radio button */
+    input[type="radio"]:checked + label::before {
+        background-color: #007bff;
+    }
+
+    /* Checked checkbox */
+    input[type="checkbox"]:checked + label::before {
+        background-color: #007bff;
+    }
+
+    /* Flexbox to align items at the top */
+    .option-container {
+        display: flex;
+        align-items: center; /* Align items vertically */
+        margin-bottom: 10px;
+    }
+
+    .option-container label {
+        font-size: 1.2em;
+        cursor: pointer;
+        display: flex;
+        align-items: center; /* Align items vertically */
+        margin-right: 10px;
+    }
+
+    .option-container .content {
+        display: flex;
+        align-items: flex-start;
+    }
+
+    /* Style the list items to remove bullets and improve layout */
+    ul {
+        list-style-type: none;
+        padding-left: 0;
+    }
+
+    .nested-ul {
+        margin-left: 30px; /* Adjust as needed for proper alignment */
+    }
+</style>
 <div class="row justify-content-center mt-1">
     <div class="col-md-12">
         <div class="container mt-5">
@@ -18,23 +84,32 @@
             <p>{{ question['text'] }}</p>
             <ul>
                 {% for option in question['options'] %}
-                    <li>
-                        <strong>{{ option['key'] }}:</strong>
-                        {% if option['value'] is iterable and not option['value'] is string %}
-                            <ul class="nested-ul">
-                                {% for step in option['value'] %}
-                                    {% if step is mapping %}
-                                        {% for key, description in step.items() %}
-                                            <li>{{ key }}: {{ description }}</li>
-                                        {% endfor %}
-                                    {% else %}
-                                        <li>{{ step }}</li>
-                                    {% endif %}
-                                {% endfor %}
-                            </ul>
+                    <li class="option-container">
+                        {% if question['choices'] == 1 %}
+                            <input type="radio" name="option" id="option{{ option['key'] }}" value="{{ option['key'] }}">
                         {% else %}
-                            {{ option['value'] }}
+                            <input type="checkbox" name="option{{ option['key'] }}" id="option{{ option['key'] }}" value="{{ option['key'] }}">
                         {% endif %}
+                        <label for="option{{ option['key'] }}">
+                            <strong>{{ option['key'] }}:</strong>
+                        </label>
+                        <div class="content">
+                            {% if option['value'] is iterable and not option['value'] is string %}
+                                <ul class="nested-ul">
+                                    {% for step in option['value'] %}
+                                        {% if step is mapping %}
+                                            {% for key, description in step.items() %}
+                                                <li>{{ key }}: {{ description }}</li>
+                                            {% endfor %}
+                                        {% else %}
+                                            <li>{{ step }}</li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                {{ option['value'] }}
+                            {% endif %}
+                        </div>
                     </li>
                 {% endfor %}
             </ul>
